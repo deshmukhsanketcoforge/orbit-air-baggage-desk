@@ -66,12 +66,12 @@ TODO: add exact argument syntax and a short example run once `main.py` exists.
 
 ## Linear Issues
 
-TODO: add the four links to the issues in the Linear project `Orbit Air Baggage Desk`. Each issue title starts with its branch name.
+The four issues below are in the Linear project [Orbit Air Baggage Desk](https://linear.app/sanket13/project/orbit-air-baggage-desk-904547f476b6). Each issue title starts with its branch name.
 
-- `feature/schema-and-filing`:
-- `feature/assign-and-status`:
-- `feature/deadlines-and-escalation`:
-- `feature/cli`:
+- `feature/schema-and-filing`: [SAN-5](https://linear.app/sanket13/issue/SAN-5/featureschema-and-filing-tables-filing-validation-deadlines-and-list)
+- `feature/assign-and-status`: [SAN-6](https://linear.app/sanket13/issue/SAN-6/featureassign-and-status-assign-resolve-close-allowed-changes-and)
+- `feature/deadlines-and-escalation`: [SAN-7](https://linear.app/sanket13/issue/SAN-7/featuredeadlines-and-escalation-overdue-rule-escalation-and-rollback)
+- `feature/cli`: [SAN-8](https://linear.app/sanket13/issue/SAN-8/featurecli-commands-now-option-and-seed)
 
 ## Setup Check
 
