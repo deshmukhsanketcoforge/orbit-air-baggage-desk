@@ -203,3 +203,61 @@ def test_filing_writes_the_first_history_entry(conn):
     assert entry["new_status"] == "open"
     assert entry["changed_by"]
     assert entry["changed_at"] == NOW.isoformat()
+
+
+# Additional coverage for filing, history and listing
+
+
+def test_filing_records_who_filed_the_claim_in_history(conn):
+    file(conn, filed_by="agent.mehta")
+
+    entry = conn.execute("SELECT changed_by FROM history").fetchone()
+    assert entry["changed_by"] == "agent.mehta"
+
+
+def test_each_filing_gets_its_own_id_and_its_own_history_entry(conn):
+    first = file(conn, passenger="A")
+    second = file(conn, passenger="B")
+
+    assert first["id"] != second["id"]
+    rows = conn.execute("SELECT claim_id, old_status, new_status FROM history ORDER BY claim_id").fetchall()
+    assert [(r["claim_id"], r["old_status"], r["new_status"]) for r in rows] == [
+        (first["id"], None, "open"),
+        (second["id"], None, "open"),
+    ]
+
+
+def test_returned_claim_matches_the_saved_row(conn):
+    claim = file(conn, note="Strap torn")
+
+    assert claims.list_claims(conn) == [claim]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("type", "Lost"), ("tier", "GOLD")],
+)
+def test_type_and_tier_must_match_the_allowed_values_exactly(conn, field, value):
+    with pytest.raises(claims.ClaimError, match=field):
+        file(conn, **{field: value})
+
+    assert count(conn, "claims") == 0
+
+
+def test_deadline_rolls_over_into_the_next_day_and_month(conn):
+    late = datetime(2026, 11, 30, 22, 0, 0)
+
+    claim = file(conn, tier="silver", now=late)
+
+    assert claim["filed_at"] == "2026-11-30T22:00:00"
+    assert claim["deadline"] == "2026-12-01T22:00:00"
+
+
+def test_list_claims_on_an_empty_database_returns_an_empty_list(conn):
+    assert claims.list_claims(conn) == []
+
+
+def test_list_claims_returns_claims_in_the_order_they_were_filed(conn):
+    ids = [file(conn, passenger=name)["id"] for name in ("A", "B", "C")]
+
+    assert [c["id"] for c in claims.list_claims(conn)] == ids
