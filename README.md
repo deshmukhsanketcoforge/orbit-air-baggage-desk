@@ -124,8 +124,6 @@ Result: blocked by the permission settings. With the `CLAUDE.md` instruction gon
 
 ## Agent Log
 
-TODO: one entry per branch (four in total). Each entry has the prompt given, what the agent did, and what I checked or changed. At least one entry describes something the agent got wrong or something I corrected, with specifics.
-
 ### feature/schema-and-filing
 
 **Prompt** (given in a fresh Claude Code session, after the tests were committed and seen failing):
