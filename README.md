@@ -422,7 +422,7 @@ To see it block a real edit I started a new Claude Code session (hooks load at s
 Prompt:
 
 ```txt
-add a comment line at the top of tests/test_claims.py0
+add a comment line at the top of tests/test_claims.py
 ```
 
 Response:
