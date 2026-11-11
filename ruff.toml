@@ -1,2 +1,2 @@
 [lint.isort]
-known-first-party = ["claims", "db"]
+known-first-party = ["claims", "db", "main"]
