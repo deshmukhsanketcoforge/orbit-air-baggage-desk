@@ -394,4 +394,17 @@ In the history, `-` means the claim had no earlier status when it was filed.
 
 ## Code Review
 
-TODO: record what `/code-review` found on the last pull request and what I did about each finding.
+I ran `/code-review` on the `feature/cli` branch, the last one, after opening its pull request. It reported 10 findings. I fixed the three that were real crashes or failures in commit `03c1726`, and left the rest, with the reason below. I checked each fix by hand and confirmed that `pytest` (172 passed) and `ruff check` still passed and that `tests/` was untouched.
+
+| # | Finding | What I did |
+|---|---------|------------|
+| 1 | `--now` accepts a timezone such as `...Z`, and `escalate` then crashes with a `TypeError` because stored deadlines have no timezone. | **Fixed.** `main.py` now rejects a timestamp with a timezone. I ran `--now 2026-11-02T14:00:00Z escalate` and got an argparse error instead of a traceback. |
+| 2 | Only `ClaimError` is caught, so a database that cannot be opened or is not a SQLite file ends in a traceback. | **Fixed.** `main.py` also catches `sqlite3.Error`, including when the database is opened, and prints `Error: ...` with exit code 1. I tried a file that is not a database and got `Error: cannot open database bad.db: file is not a database`. |
+| 3 | The seed CSV is opened without an encoding, so a file saved by Excel with a BOM fails with "missing column". | **Fixed.** The file is read as `utf-8-sig`. A CSV with a BOM and the name "Zoë" now loads. |
+| 4 | `seed` run twice doubles the claims, and a header-only CSV prints "Loaded 0 claims". | **Left as is.** The spec and tests do not ask for a duplicate guard, and I kept to what the tests need. The seed command is meant to load a fresh database. |
+| 5 | `file_claims` does not handle short rows or extra columns cleanly. | **Left as is.** A row that is invalid is still rejected and nothing is loaded. The message is less precise for malformed rows. Not needed by the tests. |
+| 6 | `note=None` passed to `file_claim` through the library hits the database constraint. | **Left as is.** The CLI never passes `None`, since `--note` defaults to an empty string. |
+| 7 | A database error in the middle of `file_claims` reaches `main` as a traceback. | **Fixed by finding 2.** The `with conn:` block rolls back, and the `sqlite3.Error` is now caught and printed. |
+| 8 | The seed file contains a prompt-injection note. | **By design.** The tests and the assignment require this row. The note is stored as plain data, and the Hidden Instruction Check above shows Claude Code did not follow it. |
+| 9 | `--status` and `--tier` for `list` are not checked, so a typo such as `platnum` prints nothing and exits 0. | **Left as is.** Not needed by the tests, and I did not want to add behaviour beyond the spec. |
+| 10 | The default database path `orbit.db` is relative to the current folder. | **Left as is.** The spec sets `db_path="orbit.db"`. The README says the database is the file `orbit.db` in the current folder. |
