@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import sqlite3
 import sys
 from datetime import datetime
 
@@ -11,9 +12,12 @@ import db
 
 def _timestamp(text):
     try:
-        return datetime.fromisoformat(text)
+        value = datetime.fromisoformat(text)
     except ValueError:
         raise argparse.ArgumentTypeError(f"not an ISO timestamp: {text!r}") from None
+    if value.tzinfo is not None:
+        raise argparse.ArgumentTypeError(f"timezone not supported, use a plain timestamp: {text!r}")
+    return value
 
 
 def build_parser():
@@ -52,7 +56,7 @@ def _claim_id(text):
 
 def _read_seed(path):
     try:
-        with open(path, newline="") as handle:
+        with open(path, newline="", encoding="utf-8-sig") as handle:
             return list(csv.DictReader(handle))
     except (OSError, UnicodeDecodeError, csv.Error) as exc:
         raise claims.ClaimError(f"cannot read {path}: {exc}") from exc
@@ -96,10 +100,14 @@ def _run(args, conn, now):
 def main(argv=None, db_path="orbit.db", clock=datetime.now):
     args = build_parser().parse_args(argv)
     now = args.now if args.now is not None else clock()
-    conn = db.connect(db_path)
+    try:
+        conn = db.connect(db_path)
+    except sqlite3.Error as exc:
+        print(f"Error: cannot open database {db_path}: {exc}", file=sys.stderr)
+        return 1
     try:
         _run(args, conn, now)
-    except claims.ClaimError as exc:
+    except (claims.ClaimError, sqlite3.Error) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     finally:
