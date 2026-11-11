@@ -43,6 +43,7 @@ def build_parser():
     add("close", "id", by=True)
     add("escalate", by=True)
     add("history", "id")
+    add("report")
     add("seed", "path")
     return parser
 
@@ -87,6 +88,9 @@ def _run(args, conn, now):
             print("Escalated claims: " + ", ".join(str(i) for i in ids))
         else:
             print("No overdue claims to escalate.")
+    elif cmd == "report":
+        for tier, counts in claims.report(conn, now).items():
+            print(f"{tier}  open {counts['open']}  overdue {counts['overdue']}")
     elif cmd == "history":
         for h in claims.get_history(conn, _claim_id(args.id)):
             print(
