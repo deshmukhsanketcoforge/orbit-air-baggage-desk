@@ -18,7 +18,7 @@ class ClaimError(ValueError):
     """Raised when a claim fails validation."""
 
 
-def file_claim(conn, passenger, flight, type, tier, note, now, filed_by="system"):
+def _validate_new_claim(passenger, flight, type, tier):
     if not passenger or not passenger.strip():
         raise ClaimError("passenger must not be blank")
     if not flight or not flight.strip():
@@ -28,24 +28,61 @@ def file_claim(conn, passenger, flight, type, tier, note, now, filed_by="system"
     if tier not in DEADLINE_HOURS:
         raise ClaimError(f"unknown tier: {tier!r}")
 
+
+def _insert_claim(conn, passenger, flight, type, tier, note, now, filed_by):
+    """Write a claim and its first history entry. Does not commit."""
     filed_at = now.isoformat()
     deadline = (now + timedelta(hours=DEADLINE_HOURS[tier])).isoformat()
+    cursor = conn.execute(
+        "INSERT INTO claims (passenger, flight, type, tier, status, note, filed_at, deadline) "
+        "VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
+        (passenger.strip(), flight.strip(), type, tier, note, filed_at, deadline),
+    )
+    claim_id = cursor.lastrowid
+    conn.execute(
+        "INSERT INTO history (claim_id, old_status, new_status, changed_by, changed_at) "
+        "VALUES (?, NULL, 'open', ?, ?)",
+        (claim_id, filed_by, filed_at),
+    )
+    return claim_id
+
+
+def file_claim(conn, passenger, flight, type, tier, note, now, filed_by="system"):
+    _validate_new_claim(passenger, flight, type, tier)
 
     with conn:  # one transaction: claim and first history entry commit together
-        cursor = conn.execute(
-            "INSERT INTO claims (passenger, flight, type, tier, status, note, filed_at, deadline) "
-            "VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-            (passenger.strip(), flight.strip(), type, tier, note, filed_at, deadline),
-        )
-        claim_id = cursor.lastrowid
-        conn.execute(
-            "INSERT INTO history (claim_id, old_status, new_status, changed_by, changed_at) "
-            "VALUES (?, NULL, 'open', ?, ?)",
-            (claim_id, filed_by, filed_at),
-        )
+        claim_id = _insert_claim(conn, passenger, flight, type, tier, note, now, filed_by)
 
     row = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
     return dict(row)
+
+
+SEED_COLUMNS = ("passenger", "flight", "type", "tier", "note")
+
+
+def file_claims(conn, rows, now, filed_by="system"):
+    """File many claims (dicts with the SEED_COLUMNS keys) in one transaction.
+
+    All-or-nothing: any invalid row or missing column raises ClaimError and nothing is saved.
+    Returns the number of claims filed.
+    """
+    rows = list(rows)
+    for number, row in enumerate(rows, start=1):
+        for column in SEED_COLUMNS:
+            if row.get(column) is None:
+                raise ClaimError(f"row {number}: missing column {column!r}")
+        try:
+            _validate_new_claim(row["passenger"], row["flight"], row["type"], row["tier"])
+        except ClaimError as exc:
+            raise ClaimError(f"row {number}: {exc}") from exc
+
+    with conn:
+        for row in rows:
+            _insert_claim(
+                conn, row["passenger"], row["flight"], row["type"], row["tier"],
+                row["note"], now, filed_by,
+            )
+    return len(rows)
 
 
 def list_claims(conn, status=None, tier=None):
