@@ -169,6 +169,27 @@ def escalate_overdue(conn, now, changed_by="system"):
     return [claim["id"] for claim in overdue]
 
 
+# STRETCH GOAL 2
+def report(conn, now):
+    """Count open and overdue claims for each tier.
+
+    open: claims whose status is "open". overdue: open or assigned claims whose
+    deadline is strictly before now (the claims escalate_overdue would escalate).
+    Returns {tier: {"open": n, "overdue": n}} for every tier. Changes nothing.
+    """
+    result = {tier: {"open": 0, "overdue": 0} for tier in DEADLINE_HOURS}
+    rows = conn.execute(
+        "SELECT * FROM claims WHERE status IN ('open', 'assigned')"
+    ).fetchall()
+    for claim in rows:
+        counts = result[claim["tier"]]
+        if claim["status"] == "open":
+            counts["open"] += 1
+        if is_overdue(claim, now):
+            counts["overdue"] += 1
+    return result
+
+
 def change_status(conn, claim_id, new_status, changed_by, now):
     return _move(conn, claim_id, new_status, changed_by, now)
 
