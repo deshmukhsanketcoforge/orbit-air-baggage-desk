@@ -1,6 +1,6 @@
 """Filing, listing and moving baggage claims through their statuses."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 DEADLINE_HOURS = {"gold": 4, "silver": 24, "standard": 72}
 CLAIM_TYPES = ("delayed", "lost", "damaged")
@@ -70,31 +70,66 @@ def _get_claim(conn, claim_id):
     return row
 
 
-def _move(conn, claim_id, new_status, changed_by, now, agent=None):
-    """Validate, then save the claim change and its history entry in one transaction."""
+def _check_changed_by(changed_by):
     if not changed_by or not changed_by.strip():
         raise ClaimError("changed_by must not be blank")
-    claim = _get_claim(conn, claim_id)
+
+
+def _write_move(conn, claim, new_status, changed_by, now, agent=None):
+    """Validate and write a claim change plus its history entry. Does not commit."""
+    _check_changed_by(changed_by)
     if new_status not in ALLOWED:
         raise ClaimError(f"unknown status: {new_status!r}")
+    claim_id = claim["id"]
     old_status = claim["status"]
     if new_status not in ALLOWED[old_status]:
         raise ClaimError(f"cannot change status from {old_status!r} to {new_status!r}")
 
-    with conn:
-        if agent is None:
-            conn.execute("UPDATE claims SET status = ? WHERE id = ?", (new_status, claim_id))
-        else:
-            conn.execute(
-                "UPDATE claims SET status = ?, assigned_agent = ? WHERE id = ?",
-                (new_status, agent, claim_id),
-            )
+    if agent is None:
+        conn.execute("UPDATE claims SET status = ? WHERE id = ?", (new_status, claim_id))
+    else:
         conn.execute(
-            "INSERT INTO history (claim_id, old_status, new_status, changed_by, changed_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (claim_id, old_status, new_status, changed_by.strip(), now.isoformat()),
+            "UPDATE claims SET status = ?, assigned_agent = ? WHERE id = ?",
+            (new_status, agent, claim_id),
         )
+    conn.execute(
+        "INSERT INTO history (claim_id, old_status, new_status, changed_by, changed_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (claim_id, old_status, new_status, changed_by.strip(), now.isoformat()),
+    )
+
+
+def _move(conn, claim_id, new_status, changed_by, now, agent=None):
+    """Validate, then save the claim change and its history entry in one transaction."""
+    _check_changed_by(changed_by)
+    claim = _get_claim(conn, claim_id)
+    with conn:
+        _write_move(conn, claim, new_status, changed_by, now, agent)
     return dict(_get_claim(conn, claim_id))
+
+
+def is_overdue(claim, now):
+    """True only when now is strictly later than the claim's deadline."""
+    return now > datetime.fromisoformat(claim["deadline"])
+
+
+def escalate_overdue(conn, now, changed_by="system"):
+    """Escalate every overdue open or assigned claim in one transaction.
+
+    Returns the escalated claim ids in id order.
+    """
+    _check_changed_by(changed_by)
+    rows = conn.execute(
+        "SELECT * FROM claims WHERE status IN ('open', 'assigned') ORDER BY id"
+    ).fetchall()
+    overdue = [row for row in rows if is_overdue(row, now)]
+    if not overdue:
+        return []
+
+    with conn:
+        for claim in overdue:
+            _write_move(conn, claim, "escalated", changed_by, now)
+    return [claim["id"] for claim in overdue]
 
 
 def change_status(conn, claim_id, new_status, changed_by, now):
