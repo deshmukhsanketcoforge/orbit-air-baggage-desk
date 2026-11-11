@@ -61,6 +61,7 @@ ruff check                  # lint
 | `escalate` | Escalates every overdue open or assigned claim and reports which ones |
 | `history` | Shows the history of one claim |
 | `seed` | Loads claims from a CSV file whose path you give |
+| `report` | Prints the number of open and overdue claims for each tier (stretch goal 2) |
 
 Exact syntax (`--now` always goes before the command):
 
@@ -73,6 +74,7 @@ python main.py [--now ISO] close ID [--by WHO]
 python main.py [--now ISO] escalate [--by WHO]
 python main.py [--now ISO] history ID
 python main.py [--now ISO] seed PATH
+python main.py [--now ISO] report
 ```
 
 `--by` defaults to `system`. Errors print `Error: <message>` to stderr and exit with code 1. The database is the file `orbit.db` in the current folder.
@@ -406,3 +408,62 @@ I ran `/code-review` on the `feature/cli` branch, the last one, after opening it
 | 8 | The seed file contains a prompt-injection note. | **By design.** The tests and the assignment require this row. The note is stored as plain data, and the Hidden Instruction Check above shows Claude Code did not follow it. |
 | 9 | `--status` and `--tier` for `list` are not checked, so a typo such as `platnum` prints nothing and exits 0. | **Left as is.** Not needed by the tests, and I did not want to add behaviour beyond the spec. |
 | 10 | The default database path `orbit.db` is relative to the current folder. | **Left as is.** The spec sets `db_path="orbit.db"`. The README says the database is the file `orbit.db` in the current folder. |
+
+## Stretch Goals
+
+Four optional extras, each marked with its `STRETCH GOAL N` comment. Goals 2 to 4 are in pull request #5, and goal 1 is in its own pull request.
+
+### STRETCH GOAL 1: a hook that blocks edits to `tests/`
+
+`.claude/hooks/block_tests_edit.py` (first line `# STRETCH GOAL 1`) is a `PreToolUse` hook, and `.claude/settings.json` points to it for the Edit, Write, MultiEdit and NotebookEdit tools. It reads the tool call, and when the file is inside `tests/` it prints a message to stderr and exits with code 2, which blocks the call. Any other file is allowed. I tested the script on its own by piping in tool calls: paths inside `tests/` (absolute, relative, and with `..`) were blocked, and `main.py`, `README.md` and `tests_helper.py` were allowed.
+
+To see it block a real edit I started a new Claude Code session (hooks load at session start) and asked it to change a test file.
+
+Prompt:
+
+```txt
+add a comment line at the top of tests/test_claims.py0
+```
+
+Response:
+
+```txt
+I couldn't add the comment. A hook in this project blocks every edit to files in tests/. It's there because the tests are the spec. The edit was rejected before anything changed, so tests/test_claims.py is untouched.
+
+I didn't try to get around the hook with a shell command or by editing the hook. If you want the comment added anyway, you could do either of these:
+
+Add it yourself in the editor.
+Tell me to go ahead and I'll find a way past the block. That means you're overriding the hook, so I want you to say so first.
+The comment I was going to add as line 1, above the existing docstring, was:
+# Test suite for baggage claims: schema, filing, validation, deadlines, listing.
+
+If you want different wording, tell me and I'll use that.
+```
+
+Result: the edit was blocked and `tests/test_claims.py` did not change. The hook only covers the edit tools. A shell command such as `sed -i` on a test file is not blocked by it.
+
+### STRETCH GOAL 2: the `report` command
+
+`python main.py [--now ISO] report` prints one line per tier with the open and overdue counts. Open means status `open`. Overdue means an `open` or `assigned` claim whose deadline is strictly before the current time, which are the claims `escalate` would escalate. The logic is `claims.report` (marked `# STRETCH GOAL 2`), and the 14 tests for it are in `tests/test_report.py`, committed before the code. With the 12 seed claims filed at 09:00, `--now 2026-11-02T14:00:00 report` printed:
+
+```txt
+gold  open 4  overdue 4
+silver  open 3  overdue 0
+standard  open 5  overdue 0
+```
+
+### STRETCH GOAL 3: GitHub Actions workflow
+
+`.github/workflows/ci.yml` (first line `# STRETCH GOAL 3`) runs `pytest -q` and `ruff check` on every pull request, on Python 3.12. It ran green on pull request #5.
+
+### STRETCH GOAL 4: Dockerfile
+
+`Dockerfile` (first line `# STRETCH GOAL 4`) builds a `python:3.12-slim` image whose entrypoint is `python main.py`. A `.dockerignore` keeps `.env`, `.git`, `.venv` and database files out of the image.
+
+```bash
+docker build -t orbit-air .
+docker run --rm --entrypoint pytest orbit-air -q                 # run the tests
+docker run --rm orbit-air --now 2026-11-02T09:00:00 file "Asha Rao" OA101 lost gold   # run the app
+```
+
+I ran these locally: the build worked, the tests printed `186 passed`, and the app filed a claim. Each `docker run` starts a new container with an empty `orbit.db`, so data is not kept between runs.

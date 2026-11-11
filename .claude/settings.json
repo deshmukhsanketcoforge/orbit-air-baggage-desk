@@ -1,6 +1,9 @@
 {
   "permissions": {
-    "deny": ["Read(./.env)", "Read(./.env.*)"]
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
   },
   "hooks": {
     "Stop": [
@@ -9,6 +12,17 @@
           {
             "type": "command",
             "command": ".venv/bin/python -m pytest -q 1>&2; rc=$?; if [ $rc -eq 0 ] || [ $rc -eq 5 ]; then exit 0; fi; exit 2"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".venv/bin/python .claude/hooks/block_tests_edit.py"
           }
         ]
       }
